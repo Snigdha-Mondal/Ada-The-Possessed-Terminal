@@ -24,6 +24,10 @@ dev = [
 [project.scripts]
 ada = "src.ada:main"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
