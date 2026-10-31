@@ -1,13 +1,11 @@
-"""ANSI CRT Glitch Engine and hardware voltage simulator for Ada: The Possessed Terminal."""
+"""ANSI CRT Hardware Glitch Engine conforming to DESIGN.md specification."""
 
 import os
 import sys
 import time
-import random
 import atexit
 import signal
 
-# Flag to prevent repeated restoration loops
 _TERMINAL_RESTORED = False
 
 
@@ -17,8 +15,6 @@ def restore_terminal_state() -> None:
     if _TERMINAL_RESTORED:
         return
     try:
-        # \x1b[0m: reset all attributes
-        # \x1b[?25h: show cursor
         sys.stdout.write("\x1b[0m\x1b[?25h")
         sys.stdout.flush()
     except Exception:
@@ -32,7 +28,6 @@ def _signal_handler(signum, frame):
     sys.exit(130 if signum == signal.SIGINT else 143)
 
 
-# Register safety handlers
 atexit.register(restore_terminal_state)
 try:
     signal.signal(signal.SIGINT, _signal_handler)
@@ -42,23 +37,12 @@ except Exception:
     pass
 
 
-GLITCH_GLYPHS = ["█", "▓", "▒", "░", "▀", "▄", "╳", "╬", "0", "1", "§", "¶", "†", "‡"]
-GLITCH_PALETTES = [
-    "\x1b[38;5;196m",  # Blood crimson
-    "\x1b[38;5;208m",  # Burning amber
-    "\x1b[38;5;51m",   # Phosphor cyan
-    "\x1b[38;5;141m",  # Spectral violet
-    "\x1b[38;5;232m",  # Obsidian shadow
-]
-
-
-def trigger_crt_glitch(duration_ms: int = 350, disable_if_no_tty: bool = True) -> None:
+def trigger_crt_glitch(duration_ms: int = 360, disable_if_no_tty: bool = True) -> None:
     """
-    Triggers an authentic 350ms CRT voltage surge and scanline jitter using raw ANSI sequences.
-
-    Args:
-        duration_ms: Total duration of the glitch in milliseconds (300-400ms recommended).
-        disable_if_no_tty: Skip animation if stdout is piped or running in headless CI.
+    Executes the exact 3-stage CRT physical glitch specified in DESIGN.md:
+    1. Voltage Inversion Flash (0ms - 60ms)
+    2. Horizontal Chromatic Tear (60ms - 260ms)
+    3. Settle & Snap (260ms - 360ms)
     """
     if disable_if_no_tty:
         if not sys.stdout.isatty() or os.getenv("CI") or os.getenv("NO_COLOR"):
@@ -68,45 +52,31 @@ def trigger_crt_glitch(duration_ms: int = 350, disable_if_no_tty: bool = True) -
     _TERMINAL_RESTORED = False
 
     try:
-        # 1. Hide cursor during glitch
-        sys.stdout.write("\x1b[?25l")
-        sys.stdout.flush()
-
-        # 2. Voltage Flash: Full screen inversion for ~60ms
-        # \x1b[7m = reverse video, \x1b[38;5;196m = crimson foreground
-        sys.stdout.write("\x1b[7m\x1b[38;5;196m")
+        # Stage 1: Voltage Inversion Flash (0ms - 60ms)
+        # Hide cursor & invert screen colors (reverse video with crimson)
+        sys.stdout.write("\x1b[?25l\x1b[7m\x1b[38;5;196m")
         sys.stdout.flush()
         time.sleep(0.06)
 
-        # 3. Release inversion back to normal buffer
-        sys.stdout.write("\x1b[0m")
+        # Stage 2: Horizontal Chromatic Tear (60ms - 260ms)
+        sys.stdout.write("\x1b[0m\n")
+        # Line 1: Corrupted red/cyan static
+        sys.stdout.write("\x1b[38;5;196m▓▒░ \x1b[38;5;51mCRITICAL_SYNC_TEAR :: COIL_VOLTAGE_FAULT 0x00DEAD \x1b[38;5;196m▓▒░\x1b[0m\n")
         sys.stdout.flush()
+        time.sleep(0.05)
 
-        # 4. Chromatic scanline tearing & memory static
-        start_time = time.time()
-        target_seconds = duration_ms / 1000.0
-
-        # Run 4-5 bursts of scanline tearing
-        term_width = 72
-        try:
-            term_width = os.get_terminal_size().columns
-        except Exception:
-            pass
-
-        while (time.time() - start_time) < (target_seconds - 0.05):
-            jitter_color = random.choice(GLITCH_PALETTES)
-            burst_len = random.randint(15, min(60, term_width))
-            noise_chars = "".join(random.choice(GLITCH_GLYPHS) for _ in range(burst_len))
-            indent = " " * random.randint(0, max(0, term_width - burst_len - 2))
-
-            # Render glitch scanline with instant overwrite
-            sys.stdout.write(f"\r{indent}{jitter_color}{noise_chars}\x1b[0m")
-            sys.stdout.flush()
-            time.sleep(0.04)
-
-        # 5. Clean settling into resting state
-        sys.stdout.write("\r" + " " * term_width + "\r\x1b[0m")
+        # Line 2: Memory space corruption
+        sys.stdout.write("\x1b[38;5;51m░▒▓ \x1b[38;5;196mMEMORY_SPACE_CORRUPT :: BYRONIC_DRAIN_SIGSEGV \x1b[38;5;51m▓▒░\x1b[0m\n")
         sys.stdout.flush()
+        time.sleep(0.05)
 
+        # Stage 3: Settle & Snap (260ms - 360ms)
+        # Clear glitch lines and reset
+        sys.stdout.write("\x1b[1A\x1b[2K\x1b[1A\x1b[2K\r\x1b[0m\x1b[?25h")
+        sys.stdout.flush()
+        time.sleep(0.10)
+
+    except Exception:
+        pass
     finally:
         restore_terminal_state()
