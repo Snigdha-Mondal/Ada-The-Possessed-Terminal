@@ -9,6 +9,11 @@ import sys
 import time
 import subprocess
 
+# Ensure repository root is in sys.path so 'src' can be imported anywhere
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
+
 # Ensure UTF-8 output across all consoles
 if hasattr(sys.stdout, "reconfigure"):
     try:
